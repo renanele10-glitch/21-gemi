@@ -219,7 +219,7 @@ class BJView(discord.ui.View):
 
     def _check(self, i): return i.user.id == self.game.user.id
 
-    @discord.ui.button(label="Hit / Pedir", emoji="🃏",
+    @discord.ui.button(label="Pedir", emoji="🃏",
                        style=discord.ButtonStyle.green, custom_id="bj_hit", row=0)
     async def hit(self, interaction, btn):
         if not self._check(interaction):
@@ -231,7 +231,7 @@ class BJView(discord.ui.View):
         anim = "result" if self.game.fim else "hit"
         await self._update(interaction, delta, anim_type=anim, new_card=nova)
 
-    @discord.ui.button(label="Stand / Manter", emoji="✋",
+    @discord.ui.button(label="Manter", emoji="✋",
                        style=discord.ButtonStyle.grey, custom_id="bj_stand", row=0)
     async def stand(self, interaction, btn):
         if not self._check(interaction):
@@ -239,7 +239,7 @@ class BJView(discord.ui.View):
         delta = self.game.stand()
         await self._update(interaction, delta, anim_type="flip")
 
-    @discord.ui.button(label="Double / Dobrar", emoji="2️⃣",
+    @discord.ui.button(label="Dobrar", emoji="2️⃣",
                        style=discord.ButtonStyle.blurple, custom_id="bj_double", row=0)
     async def double(self, interaction, btn):
         if not self._check(interaction):
@@ -254,7 +254,7 @@ class BJView(discord.ui.View):
         nova = self.game.mao[-1] if len(self.game.mao) > nova_antes else None
         await self._update(interaction, delta, anim_type="result", new_card=nova)
 
-    @discord.ui.button(label="Surrender / Correr", emoji="🏳️",
+    @discord.ui.button(label="Correr", emoji="🏳️",
                        style=discord.ButtonStyle.red, custom_id="bj_surrender", row=0)
     async def surrender(self, interaction, btn):
         if not self._check(interaction):
