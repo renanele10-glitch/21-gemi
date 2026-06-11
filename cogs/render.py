@@ -7,7 +7,7 @@ import io
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 
-W, H = 800, 900   # landscape (blackjack, poker, truco)
+W, H = 900, 1100   # landscape (blackjack, poker, truco)
 WP, HP = 520, 720  # portrait (xadrez)
 
 # Paleta
