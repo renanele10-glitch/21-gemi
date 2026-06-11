@@ -37,10 +37,22 @@ class BlackjackGame:
         self.dealer_hand = []
         self.game_over = False
         self.result = None
+        
+        # Sistema de Placar Persistente
+        self.wins = 0
+        self.losses = 0
+        self.ties = 0
 
     def deal(self):
+        # Reinicia o baralho se estiver ficando vazio
+        if len(self.deck) < 20:
+            self.deck = [Card(s, r) for s in SUITS for r in RANKS] * 4
+            random.shuffle(self.deck)
+            
         self.player_hand = [self.deck.pop(), self.deck.pop()]
         self.dealer_hand = [self.deck.pop(), self.deck.pop()]
+        self.game_over = False
+        self.result = None
 
     def hand_value(self, hand):
         value = sum(VALUES[card.rank] for card in hand)
@@ -63,64 +75,96 @@ class BlackjackGame:
 
         if player_val > 21:
             self.result = "💥 **Você estourou! Dealer vence.**"
+            self.losses += 1
         elif dealer_val > 21:
             self.result = "🎉 **Dealer estourou! Você venceu!**"
+            self.wins += 1
         elif player_val > dealer_val:
             self.result = "🎉 **Você venceu!**"
+            self.wins += 1
         elif player_val == dealer_val:
             self.result = "🤝 **Empate!**"
+            self.ties += 1
         else:
             self.result = "😔 **Dealer venceu.**"
+            self.losses += 1
 
 
 class BlackjackView(View):
     def __init__(self, game: BlackjackGame):
-        super().__init__(timeout=180)
+        super().__init__(timeout=300) # 5 minutos de inatividade
         self.game = game
+        
+        # O botão de próxima mão começa desativado
+        for child in self.children:
+            if child.custom_id == "bj_next":
+                child.disabled = True
 
     async def update(self, interaction: discord.Interaction):
-        if len(self.game.player_hand) > 2 or self.game.game_over:
-            for child in self.children:
-                if child.custom_id in ["bj_double", "bj_surrender"]:
-                    child.disabled = True
-
-        if self.game.game_over:
-            self.disable_all()
+        # Atualiza o estado de ativação de todos os botões dinamicamente
+        for child in self.children:
+            if child.custom_id in ["bj_hit", "bj_stand"]:
+                child.disabled = self.game.game_over
+            elif child.custom_id in ["bj_double", "bj_surrender"]:
+                # Só permite double/surrender com exatamente 2 cartas na mão
+                child.disabled = self.game.game_over or len(self.game.player_hand) > 2
+            elif child.custom_id == "bj_next":
+                # Só ativa a próxima mão quando o jogo atual terminar
+                child.disabled = not self.game.game_over
 
         embed, file = self.create_embed()
         await interaction.response.edit_message(embed=embed, attachments=[file], view=self)
 
     def draw_cards_to_image(self):
-        img = Image.new('RGB', (600, 350), color='#144728')
+        # Dimensões mais verticais (500x420) para ocupar melhor a tela do celular
+        img = Image.new('RGB', (500, 420), color='#144728')
         draw = ImageDraw.Draw(img)
         
+        # Fontes bem maiores para alta legibilidade no Mobile
         try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
-            card_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+            card_rank_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+            card_suit_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 38)
         except:
-            font = ImageFont.load_default()
-            card_font = ImageFont.load_default()
+            # Fallback caso o sistema não ache a fonte padrão do Linux
+            try:
+                font = ImageFont.load_default(size=22)
+                card_rank_font = ImageFont.load_default(size=20)
+                card_suit_font = ImageFont.load_default(size=38)
+            except:
+                font = ImageFont.load_default()
+                card_rank_font = ImageFont.load_default()
+                card_suit_font = ImageFont.load_default()
 
         def draw_hand(hand, start_y, hide_first=False):
-            start_x = 50
+            start_x = 30
+            # Cartas maiores (85x125)
             for i, card in enumerate(hand):
-                card_rect = [start_x, start_y, start_x + 70, start_y + 100]
+                card_rect = [start_x, start_y, start_x + 85, start_y + 125]
                 
                 if hide_first and i == 0:
-                    draw.rounded_rectangle(card_rect, radius=5, fill="#1c3b57", outline="#ffffff", width=2)
-                    draw.text((start_x + 25, start_y + 35), "?", fill="#ffffff", font=card_font)
+                    # Carta virada do Dealer
+                    draw.rounded_rectangle(card_rect, radius=7, fill="#1c3b57", outline="#ffffff", width=2)
+                    draw.text((start_x + 32, start_y + 45), "?", fill="#ffffff", font=card_suit_font)
                 else:
-                    draw.rounded_rectangle(card_rect, radius=5, fill="#ffffff", outline="#000000", width=1)
-                    draw.text((start_x + 8, start_y + 8), card.rank, fill=card.color, font=font)
-                    draw.text((start_x + 25, start_y + 40), card.suit, fill=card.color, font=card_font)
+                    # Carta aberta
+                    draw.rounded_rectangle(card_rect, radius=7, fill="#ffffff", outline="#000000", width=1)
+                    # Rank no canto superior esquerdo
+                    draw.text((start_x + 8, start_y + 8), card.rank, fill=card.color, font=card_rank_font)
+                    # Naipe grande centralizado
+                    draw.text((start_x + 28, start_y + 45), card.suit, fill=card.color, font=card_suit_font)
                 
-                start_x += 85
+                start_x += 92
 
-        draw.text((50, 20), f"DEALER (Total: {self.game.hand_value(self.game.dealer_hand) if self.game.game_over else '?'})", fill="#ffffff", font=font)
+        # Renderização do Painel do Dealer
+        dealer_text = f"DEALER (Total: {self.game.hand_value(self.game.dealer_hand) if self.game.game_over else '?'})"
+        draw.text((30, 15), dealer_text, fill="#ffffff", font=font)
         draw_hand(self.game.dealer_hand, 50, hide_first=not self.game.game_over)
 
-        draw.text((50, 170), f"VOCÊ (Total: {self.game.hand_value(self.game.player_hand)})", fill="#ffffff", font=font)
-        draw_hand(self.game.player_hand, 200)
+        # Renderização do Painel do Jogador
+        player_text = f"VOCÊ (Total: {self.game.hand_value(self.game.player_hand)})"
+        draw.text((30, 200), player_text, fill="#ffffff", font=font)
+        draw_hand(self.game.player_hand, 235)
 
         buffer = io.BytesIO()
         img.save(buffer, format='PNG')
@@ -128,13 +172,19 @@ class BlackjackView(View):
         return discord.File(buffer, filename="blackjack.png")
 
     def create_embed(self):
-        embed = discord.Embed(title="🃏 **BLACKJACK 21**", color=0x144728)
-        embed.set_footer(text=f"Mesa de: {self.game.player.display_name}")
+        embed = discord.Embed(title="🃏 **BLACKJACK MESA PRIVADA**", color=0x144728)
+        
+        # Placar persistente exibido no topo do embed
+        embed.description = (
+            f"🏆 **Seu Placar:** {self.game.wins} Vitórias | {self.game.losses} Derrotas | {self.game.ties} Empates\n"
+            f"──────────────────────────"
+        )
 
         if self.game.game_over:
-            embed.add_field(name="**RESULTADO**", value=self.game.result, inline=False)
+            embed.add_field(name="**RODADA ENCERRADA**", value=self.game.result, inline=False)
+            embed.set_footer(text="Clique em 'Próxima Mão 🔁' para continuar jogando nesta mesa.")
         else:
-            embed.description = "Escolha sua ação nos botões abaixo."
+            embed.set_footer(text=f"Mesa ativa de: {self.game.player.display_name}")
 
         file = self.draw_cards_to_image()
         embed.set_image(url="attachment://blackjack.png")
@@ -143,7 +193,7 @@ class BlackjackView(View):
     def check_user(self, interaction: discord.Interaction):
         return interaction.user.id == self.game.player.id
 
-    @discord.ui.button(label="Hit (Pedir)", style=discord.ButtonStyle.green, custom_id="bj_hit")
+    @discord.ui.button(label="Hit (Pedir)", style=discord.ButtonStyle.green, custom_id="bj_hit", row=0)
     async def hit(self, interaction: discord.Interaction, button: Button):
         if not self.check_user(interaction):
             return await interaction.response.send_message("Esta mesa não é sua!", ephemeral=True)
@@ -155,7 +205,7 @@ class BlackjackView(View):
 
         await self.update(interaction)
 
-    @discord.ui.button(label="Stand (Manter)", style=discord.ButtonStyle.grey, custom_id="bj_stand")
+    @discord.ui.button(label="Stand (Manter)", style=discord.ButtonStyle.grey, custom_id="bj_stand", row=0)
     async def stand(self, interaction: discord.Interaction, button: Button):
         if not self.check_user(interaction):
             return await interaction.response.send_message("Esta mesa não é sua!", ephemeral=True)
@@ -165,7 +215,7 @@ class BlackjackView(View):
         self.game.evaluate_winner()
         await self.update(interaction)
 
-    @discord.ui.button(label="Double (Dobrar)", style=discord.ButtonStyle.blurple, custom_id="bj_double")
+    @discord.ui.button(label="Double (Dobrar)", style=discord.ButtonStyle.blurple, custom_id="bj_double", row=0)
     async def double(self, interaction: discord.Interaction, button: Button):
         if not self.check_user(interaction):
             return await interaction.response.send_message("Esta mesa não é sua!", ephemeral=True)
@@ -176,18 +226,24 @@ class BlackjackView(View):
         self.game.evaluate_winner()
         await self.update(interaction)
 
-    @discord.ui.button(label="Surrender (Correr)", style=discord.ButtonStyle.red, custom_id="bj_surrender")
+    @discord.ui.button(label="Surrender (Correr)", style=discord.ButtonStyle.red, custom_id="bj_surrender", row=0)
     async def surrender(self, interaction: discord.Interaction, button: Button):
         if not self.check_user(interaction):
             return await interaction.response.send_message("Esta mesa não é sua!", ephemeral=True)
 
         self.game.game_over = True
-        self.game.result = "🏳️ **Você rendeu-se! O Dealer recolhe metade da mesa.**"
+        self.game.result = "🏳️ **Você rendeu-se desta mão! O Dealer recolhe as cartas.**"
+        self.game.losses += 1
         await self.update(interaction)
 
-    def disable_all(self):
-        for child in self.children:
-            child.disabled = True
+    # NOVO BOTÃO: Permite continuar jogando infinitamente na mesma mesa
+    @discord.ui.button(label="Próxima Mão 🔁", style=discord.ButtonStyle.blurple, custom_id="bj_next", row=1)
+    async def next_hand(self, interaction: discord.Interaction, button: Button):
+        if not self.check_user(interaction):
+            return await interaction.response.send_message("Esta mesa não é sua!", ephemeral=True)
+
+        self.game.deal() # Distribui novas cartas mantendo o placar intacto
+        await self.update(interaction)
 
 
 @bot.command(name="blackjack")
@@ -203,7 +259,6 @@ async def blackjack(ctx):
 async def on_ready():
     print(f"Bot online como {bot.user}")
 
-# Puxa o Token das variáveis de ambiente (essencial para o Railway)
 TOKEN = os.getenv("DISCORD_TOKEN")
 if TOKEN:
     bot.run(TOKEN)
