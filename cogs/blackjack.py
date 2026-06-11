@@ -138,8 +138,8 @@ class BJView(discord.ui.View):
                                     reveal_dealer=g.fim, result="")
         base_img = Image.open(base_buf).convert("RGB")
 
-        CW, CH = 105, 140
-        GAP    = 10
+        CW, CH = 135, 170
+        GAP    = 30
 
         if not animated or anim_type is None:
             # PNG estático com resultado se houver
