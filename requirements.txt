@@ -1,0 +1,4 @@
+discord.py==2.4.0
+Pillow==10.4.0
+python-chess==1.999
+asyncpg==0.29.0
