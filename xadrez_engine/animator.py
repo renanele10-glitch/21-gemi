@@ -8,7 +8,7 @@ import io
 import math
 from PIL import Image, ImageDraw
 import chess
-from .render import render_board, _piece_sprite, _sq_to_xy, CELL
+from .render import render_board, _load_piece, _sq_to_xy, CELL
 
 
 def _save_gif(frames: list[Image.Image], durations: list[int]) -> io.BytesIO:
@@ -67,7 +67,7 @@ def gif_move(
 
     sx, sy = _sq_to_xy(from_sq, flipped)
     tx, ty = _sq_to_xy(to_sq,   flipped)
-    sprite = _piece_sprite(piece.symbol(), CELL)
+    sprite = _load_piece(piece.symbol(), CELL)
     ox     = (CELL - sprite.width)  // 2
     oy     = (CELL - sprite.height) // 2
 
@@ -91,7 +91,7 @@ def gif_move(
         # Captura: peça inimiga some
         if captured and t < 0.8:
             cap_sym    = captured.symbol()
-            cap_sprite = _piece_sprite(cap_sym, CELL)
+            cap_sprite = _load_piece(cap_sym, CELL)
             cap_alpha  = max(0, int(255 * (1.0 - t / 0.8)))
             cap_copy   = cap_sprite.copy()
             r, g, b, a = cap_copy.split()
@@ -177,3 +177,4 @@ def gif_checkmate(
         durs.append(1000 // fps)
 
     return _save_gif(frames, durs)
+    
