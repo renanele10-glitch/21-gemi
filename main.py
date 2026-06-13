@@ -15,7 +15,6 @@ COGS = [
     "cogs.blackjack",
     "cogs.poker",
     "cogs.truco",
-    "cogs.xadrez",
     "xadrez_engine.chess_view",   # ← engine novo de xadrez
 ]
 
