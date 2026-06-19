@@ -167,7 +167,10 @@ class UNOGame:
     dir: int        = 1
     estado: str     = "aguardando"
     chosen_color: str | None = None
+    bot: object = None
     msg: discord.Message | None = None
+    msg_controle: discord.Message | None = None  # painel fixo de botões
+    log: list = field(default_factory=list)  # últimas jogadas
     _timeout_task: object = field(default=None, repr=False)
 
     def atual(self):
@@ -203,8 +206,17 @@ async def _render_update(g: UNOGame):
            "uno": len(g.maos.get(j.id, [])) == 1}
           for i, j in enumerate(g.jogadores)]
     buf = _render_table(g.topo(), len(g.descarte), ji)
+    # Edita tabuleiro
     try: await g.msg.edit(attachments=[discord.File(buf, "uno.png")])
     except: pass
+    # Edita painel de controle (log + botões)
+    if g.msg_controle:
+        log_str = "\n".join(g.log[-5:]) if g.log else "—"
+        embed = discord.Embed(description=log_str, color=0x1a0005)
+        atual = g.atual()
+        embed.set_footer(text=f"Vez de {atual.display_name}" if atual else "")
+        try: await g.msg_controle.edit(embed=embed, view=UNOView(g.canal, None))
+        except: pass
 
 def _reembaralhar(g: UNOGame):
     if len(g.deck) < 5 and len(g.descarte) > 1:
@@ -216,9 +228,11 @@ def _reembaralhar(g: UNOGame):
 
 # ── Views ─────────────────────────────────────────────────────────────────────
 class UNOView(discord.ui.View):
-    def __init__(self, canal, bot):
+    def __init__(self, canal, bot=None):
         super().__init__(timeout=MESA_TIMEOUT)
-        self.canal = canal; self.bot = bot
+        self.canal = canal
+        g = mesas.get(canal)
+        self.bot = bot or (g.bot if g else None)
 
     async def on_timeout(self): pass
 
@@ -236,13 +250,14 @@ class UNOView(discord.ui.View):
         buf = _render_hand(mao, highlight=jogaveis, page=0)
         pages = (len(mao) - 1) // MAX_CARDS_PAGE + 1
         cor_ativa = f" (cor ativa: **{CORES_PT.get(g.chosen_color, g.chosen_color)}**)" if g.chosen_color else ""
+        content = (f"**Sua mão** | Topo: {SPECIALS.get(g.topo()[1], str(g.topo()[1]))} "
+                   f"{CORES_PT.get(g.topo()[0], g.topo()[0])}{cor_ativa}"
+                   + (f" | Página 1/{pages}" if pages > 1 else ""))
+        view = UNOJogarView(self.canal, self.bot, mao, g.atual().id if g.atual() else 0,
+                            interaction.user.id, page=0)
+        # Sempre send ephemeral — não polui o canal
         await interaction.response.send_message(
-            f"**Sua mão** | Topo: {SPECIALS.get(g.topo()[1], str(g.topo()[1]))} {CORES_PT.get(g.topo()[0], g.topo()[0])}{cor_ativa}"
-            + (f" | Página 1/{pages}" if pages > 1 else ""),
-            file=discord.File(buf, "mao.png"),
-            view=UNOJogarView(self.canal, self.bot, mao, g.atual().id if g.atual() else 0,
-                              interaction.user.id, page=0),
-            ephemeral=True)
+            content, file=discord.File(buf, "mao.png"), view=view, ephemeral=True)
 
     @discord.ui.button(label="📥 Comprar", style=discord.ButtonStyle.secondary, custom_id="uno_draw")
     async def comprar(self, interaction, btn):
@@ -262,11 +277,9 @@ class UNOView(discord.ui.View):
         await _render_update(g)
         await _agendar_timeout(g)
         prox = g.atual()
-        await interaction.followup.send(
-            f"📥 Você comprou. Vez de **{prox.display_name if prox else '?'}**.", ephemeral=True)
-        await interaction.channel.send(
-            f"📥 **{interaction.user.display_name}** comprou. Vez de **{prox.display_name if prox else '?'}**.",
-            view=UNOView(self.canal, self.bot))
+        g.log.append(f"📥 **{interaction.user.display_name}** comprou. Vez de **{prox.display_name if prox else '?'}**.")
+        await _render_update(g)
+        await interaction.followup.send("📥 Você comprou.", ephemeral=True)
 
     @discord.ui.button(label="🚪 Encerrar", style=discord.ButtonStyle.danger, custom_id="uno_end", row=1)
     async def encerrar(self, interaction, btn):
@@ -347,13 +360,19 @@ class UNOJogarView(discord.ui.View):
                 mesas.pop(self.canal, None)
                 try: await g.msg.delete()
                 except: pass
-                await interaction.channel.send(
-                    f"🏆 **{interaction.user.display_name}** venceu o UNO! **+{premio} fichas!** 🎉")
+                if g.msg_controle:
+                    try:
+                        embed = discord.Embed(
+                            description=f"🏆 **{interaction.user.display_name}** venceu o UNO! **+{premio} fichas!** 🎉",
+                            color=0xFFD700)
+                        await g.msg_controle.edit(embed=embed, view=None)
+                    except: pass
+                else:
+                    await interaction.channel.send(f"🏆 **{interaction.user.display_name}** venceu o UNO! **+{premio} fichas!** 🎉")
                 return
 
             if len(mao) == 1:
-                await interaction.channel.send(
-                    f"⚠️ **UNO!** {interaction.user.display_name} tem 1 carta!")
+                g.log.append(f"⚠️ **UNO!** {interaction.user.display_name} tem 1 carta!")
 
             # Wild → pedir cor antes de avançar turno
             if c == "wild":
@@ -369,11 +388,9 @@ class UNOJogarView(discord.ui.View):
             await _agendar_timeout(g)
             prox = g.atual()
             log_str = " | ".join(logs) + " " if logs else ""
-            await interaction.channel.send(
-                f"🃏 **{interaction.user.display_name}** jogou **{SPECIALS.get(n,str(n))} {CORES_PT.get(c,c)}**. "
-                f"{log_str}Vez de **{prox.display_name if prox else '?'}**.",
-                view=UNOView(self.canal, self.bot))
-            await interaction.followup.send("Carta jogada!", ephemeral=True)
+            g.log.append(f"🃏 **{interaction.user.display_name}** jogou **{SPECIALS.get(n,str(n))} {CORES_PT.get(c,c)}**. {log_str}Vez de **{prox.display_name if prox else '?'}**.")
+            await _render_update(g)
+            await interaction.followup.send("✅ Carta jogada!", ephemeral=True)
         return cb
 
     async def _prev(self, interaction: discord.Interaction):
@@ -424,15 +441,11 @@ class UNOCorView(discord.ui.View):
                 drawn = [g.deck.pop() for _ in range(min(4, len(g.deck)))]
                 g.maos[j.id].extend(drawn)
                 g.cur = (prox + g.dir) % nj
-                await interaction.channel.send(
-                    f"✋ {j.display_name} comprou 4 e pulou! Cor: **{CORES_PT.get(cor, cor)}**",
-                    view=UNOView(self.canal, self.bot))
+                g.log.append(f"✋ {j.display_name} comprou 4 e pulou! Cor: **{CORES_PT.get(cor, cor)}**")
             else:
                 g.cur = (g.cur + g.dir) % nj
                 prox  = g.atual()
-                await interaction.channel.send(
-                    f"🎨 Cor: **{CORES_PT.get(cor, cor)}**. Vez de **{prox.display_name if prox else '?'}**.",
-                    view=UNOView(self.canal, self.bot))
+                g.log.append(f"🎨 Cor: **{CORES_PT.get(cor, cor)}**. Vez de **{prox.display_name if prox else '?'}**.")
             await _render_update(g)
             await _agendar_timeout(g)
             await interaction.followup.send(f"Cor **{CORES_PT.get(cor, cor)}** escolhida!", ephemeral=True)
@@ -483,11 +496,14 @@ class UNOEntrarView(discord.ui.View):
         buf = _render_table(g.topo(), 1, ji)
         try: await interaction.message.delete()
         except: pass
-        msg = await interaction.channel.send(
-            f"🃏 **UNO!** Vez de **{g.jogadores[0].display_name}**. Premio: **{PREMIO_BASE}** fichas/jogador eliminado.",
-            file=discord.File(buf, "uno.png"),
-            view=UNOView(self.canal, self.bot))
+        msg = await interaction.channel.send(file=discord.File(buf, "uno.png"))
+        g.bot = self.bot
         g.msg = msg
+        embed = discord.Embed(
+            description=f"🃏 **UNO** iniciado! Prêmio: **{PREMIO_BASE}** fichas/jogador eliminado.",
+            color=0x1a0005)
+        embed.set_footer(text=f"Vez de {g.jogadores[0].display_name}")
+        g.msg_controle = await interaction.channel.send(embed=embed, view=UNOView(self.canal, self.bot))
         await _agendar_timeout(g)
 
 
