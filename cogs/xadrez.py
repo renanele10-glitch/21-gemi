@@ -486,40 +486,42 @@ async def _checar_start(g: XZGame, bot, interaction: discord.Interaction):
         f"♟️ **{bn}** ⬜ vs ⬛ **{pn}**{aposta_str}",
         file=discord.File(buf, "xadrez.png"))
 
-    # Cria threads privadas (apenas os jogadores + bot podem ver)
-    try:
-        g.thread_b = await interaction.channel.create_thread(
-            name=f"♟️ Xadrez — {bn} (⬜)",
-            type=discord.ChannelType.private_thread,
-            invitable=False)
-        await g.thread_b.add_user(g.brancas)
+    # Cria threads privadas — tenta private_thread, cai pra public se não tiver permissão
+    async def _criar_thread(nome: str, membro: discord.Member) -> discord.Thread:
+        try:
+            t = await interaction.channel.create_thread(
+                name=nome,
+                type=discord.ChannelType.private_thread,
+                invitable=False,
+                auto_archive_duration=60)
+            await t.add_user(membro)
+            return t
+        except (discord.Forbidden, discord.HTTPException):
+            # Fallback: thread pública sem mensagem âncora
+            t = await interaction.channel.create_thread(
+                name=nome,
+                auto_archive_duration=60,
+                type=discord.ChannelType.public_thread)
+            await t.add_user(membro)
+            return t
 
-        g.thread_p = await interaction.channel.create_thread(
-            name=f"♟️ Xadrez — {pn} (⬛)",
-            type=discord.ChannelType.private_thread,
-            invitable=False)
-        await g.thread_p.add_user(g.pretas)
-    except discord.Forbidden:
-        # Sem permissão pra thread privada → fallback para thread pública
-        g.thread_b = await interaction.channel.create_thread(
-            name=f"♟️ Xadrez — {bn} (⬜)",
-            message=g.msg)
-        g.thread_p = await interaction.channel.create_thread(
-            name=f"♟️ Xadrez — {pn} (⬛)",
-            message=g.msg)
-        await g.thread_b.add_user(g.brancas)
-        await g.thread_p.add_user(g.pretas)
+     g.thread_b = await _criar_thread(f"♟️ {bn} ⬜", g.brancas)
+     g.thread_p = await _criar_thread(f"♟️ {pn} ⬛", g.pretas)
 
-    await g.thread_b.send(
-        f"🏰 Sua thread privada, **{bn}**! Você joga com as **brancas ⬜**.\n"
-        f"Quando for sua vez, escolha a peça no menu abaixo.")
-    await g.thread_p.send(
-        f"🏰 Sua thread privada, **{pn}**! Você joga com as **pretas ⬛**.\n"
-        f"Aguarde sua vez — você receberá o menu aqui.")
+     # Aguarda Discord registrar as threads antes de mandar views
+     await asyncio.sleep(1.5)
 
-    await _agendar_timeout(g, bot)
-    # Brancas começam
-    await _enviar_controles(g, bot, vez_w=True)
+     await g.thread_b.send(
+         f"🏰 **{bn}**, esta é sua thread!\n"
+         f"Você joga com as **brancas ⬜**. O menu de jogada aparecerá abaixo:")
+     await g.thread_p.send(
+         f"🏰 **{pn}**, esta é sua thread!\n"
+         f"Você joga com as **pretas ⬛**. Aguarde — o menu aparecerá aqui quando for sua vez.")
+
+     await _agendar_timeout(g, bot)
+     await asyncio.sleep(0.5)
+     # Brancas começam
+     await _enviar_controles(g, bot, vez_w=True)
 
 
 class XZNovaView(discord.ui.View):
