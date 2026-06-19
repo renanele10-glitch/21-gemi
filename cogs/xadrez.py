@@ -505,23 +505,23 @@ async def _checar_start(g: XZGame, bot, interaction: discord.Interaction):
             await t.add_user(membro)
             return t
 
-     g.thread_b = await _criar_thread(f"♟️ {bn} ⬜", g.brancas)
-     g.thread_p = await _criar_thread(f"♟️ {pn} ⬛", g.pretas)
+    g.thread_b = await _criar_thread(f"♟️ {bn} ⬜", g.brancas)
+    g.thread_p = await _criar_thread(f"♟️ {pn} ⬛", g.pretas)
 
-     # Aguarda Discord registrar as threads antes de mandar views
-     await asyncio.sleep(1.5)
+    # Aguarda Discord registrar as threads antes de mandar views
+    await asyncio.sleep(1.5)
 
-     await g.thread_b.send(
-         f"🏰 **{bn}**, esta é sua thread!\n"
-         f"Você joga com as **brancas ⬜**. O menu de jogada aparecerá abaixo:")
-     await g.thread_p.send(
-         f"🏰 **{pn}**, esta é sua thread!\n"
-         f"Você joga com as **pretas ⬛**. Aguarde — o menu aparecerá aqui quando for sua vez.")
+    await g.thread_b.send(
+        f"🏰 **{bn}**, esta é sua thread!\n"
+        f"Você joga com as **brancas ⬜**. O menu de jogada aparecerá abaixo:")
+    await g.thread_p.send(
+        f"🏰 **{pn}**, esta é sua thread!\n"
+        f"Você joga com as **pretas ⬛**. Aguarde — o menu aparecerá aqui quando for sua vez.")
 
-     await _agendar_timeout(g, bot)
-     await asyncio.sleep(0.5)
-     # Brancas começam
-     await _enviar_controles(g, bot, vez_w=True)
+    await _agendar_timeout(g, bot)
+    await asyncio.sleep(0.5)
+    # Brancas começam
+    await _enviar_controles(g, bot, vez_w=True)
 
 
 class XZNovaView(discord.ui.View):
