@@ -212,7 +212,7 @@ async def _encerrar_partida(g: XZGame, bot, vencedor: discord.Member | None):
 
 
 async def _enviar_controles(g: XZGame, bot, vez_w: bool):
-    """Envia select menu de peças na thread do jogador da vez."""
+    """Envia select menu de peças na thread do jogador da vez. Tenta até 3x."""
     thread  = g.thread_b if vez_w else g.thread_p
     jogador = g.brancas  if vez_w else g.pretas
     if not thread or not jogador: return
@@ -220,9 +220,8 @@ async def _enviar_controles(g: XZGame, bot, vez_w: bool):
     pecas = _pecas_moviveis(g.board, vez_w)
     if not pecas: return
 
-    # Monta opções do select: "Peão e2", "Torre a1", etc.
     opcoes = []
-    for r, c in pecas[:25]:   # Discord limita 25 opções
+    for r, c in pecas[:25]:
         p    = g.board[r][c]
         nome = PECAS_NOMES.get(p.lower(), p)
         coord = _sc(r, c).upper()
@@ -234,12 +233,39 @@ async def _enviar_controles(g: XZGame, bot, vez_w: bool):
 
     view = XZSelecionarView(g.canal, bot, opcoes, vez_w)
     check_str = " ⚠️ **XEQUE!**" if _in_check(g.board, vez_w) else ""
-    msg = await thread.send(
-        f"**Sua vez!**{check_str} Escolha a peça para mover:",
-        view=view)
 
-    if vez_w: g.msg_b = msg
-    else:     g.msg_p = msg
+    # Tenta enviar até 3x com delay crescente (thread pode não estar pronta)
+    msg = None
+    for tentativa in range(3):
+        try:
+            msg = await thread.send(
+                f"**Sua vez!**{check_str} Escolha a peça para mover:",
+                view=view)
+            break
+        except Exception:
+            if tentativa < 2:
+                await asyncio.sleep(2 ** tentativa)  # 1s, 2s
+            else:
+                # Última tentativa: tenta unarchive a thread antes
+                try:
+                    await thread.edit(archived=False)
+                    await asyncio.sleep(1)
+                    msg = await thread.send(
+                        f"**Sua vez!**{check_str} Escolha a peça para mover:",
+                        view=view)
+                except Exception as e:
+                    # Avisa no canal público
+                    canal_obj = bot.get_channel(g.canal)
+                    if canal_obj:
+                        jogador_nome = jogador.display_name
+                        await canal_obj.send(
+                            f"⚠️ Não consegui abrir a thread de **{jogador_nome}**. "
+                            f"Use `/xadrez` novamente ou verifique as permissões de thread.")
+                    return
+
+    if msg:
+        if vez_w: g.msg_b = msg
+        else:     g.msg_p = msg
 
 def _emoji_peca(p: str) -> str:
     mapa = {"P":"♙","R":"♖","N":"♘","B":"♗","Q":"♕","K":"♔",
@@ -519,7 +545,7 @@ async def _checar_start(g: XZGame, bot, interaction: discord.Interaction):
         f"Você joga com as **pretas ⬛**. Aguarde — o menu aparecerá aqui quando for sua vez.")
 
     await _agendar_timeout(g, bot)
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.0)
     # Brancas começam
     await _enviar_controles(g, bot, vez_w=True)
 
