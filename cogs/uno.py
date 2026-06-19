@@ -17,7 +17,9 @@ from .fichas import add_saldo
 
 ASSETS  = Path(__file__).parent.parent / "assets" / "uno"
 COLORS  = ["blue","green","red","yellow"]
-SPECIALS = {10:"Skip", 11:"Reverse", 12:"+2", 13:"Wild", 14:"+4"}
+CORES_PT = {"blue":"Azul","green":"Verde","red":"Vermelho","yellow":"Amarelo"}
+ESPECIAIS_PT = {10:"Bloqueio", 11:"Inverter", 12:"+2", 13:"Coringa", 14:"+4"}
+SPECIALS = {10:"Bloqueio", 11:"Inverter", 12:"+2", 13:"Coringa", 14:"+4"}
 CARD_W, CARD_H = 100, 148
 MESA_TIMEOUT   = 480   # 8 min
 PREMIO_BASE    = 150   # fichas por jogador eliminado
@@ -233,9 +235,9 @@ class UNOView(discord.ui.View):
                     and g.atual() and g.atual().id == interaction.user.id}
         buf = _render_hand(mao, highlight=jogaveis, page=0)
         pages = (len(mao) - 1) // MAX_CARDS_PAGE + 1
-        cor_ativa = f" (cor ativa: **{g.chosen_color}**)" if g.chosen_color else ""
+        cor_ativa = f" (cor ativa: **{CORES_PT.get(g.chosen_color, g.chosen_color)}**)" if g.chosen_color else ""
         await interaction.response.send_message(
-            f"**Sua mão** | Topo: {SPECIALS.get(g.topo()[1], g.topo()[1])} {g.topo()[0]}{cor_ativa}"
+            f"**Sua mão** | Topo: {SPECIALS.get(g.topo()[1], str(g.topo()[1]))} {CORES_PT.get(g.topo()[0], g.topo()[0])}{cor_ativa}"
             + (f" | Página 1/{pages}" if pages > 1 else ""),
             file=discord.File(buf, "mao.png"),
             view=UNOJogarView(self.canal, self.bot, mao, g.atual().id if g.atual() else 0,
@@ -297,7 +299,7 @@ class UNOJogarView(discord.ui.View):
             start = page * MAX_CARDS_PAGE
             for i, (c, n) in enumerate(mao[start:start + MAX_CARDS_PAGE]):
                 real_idx = start + i
-                label    = f"{real_idx}: {SPECIALS.get(n, n)} {c}"[:25]
+                label    = f"{real_idx}: {SPECIALS.get(n, str(n))} {CORES_PT.get(c, c)}"[:25]
                 btn      = discord.ui.Button(
                     label=label, style=discord.ButtonStyle.success, row=i // 5)
                 btn.callback = self._make_cb(real_idx)
@@ -368,7 +370,7 @@ class UNOJogarView(discord.ui.View):
             prox = g.atual()
             log_str = " | ".join(logs) + " " if logs else ""
             await interaction.channel.send(
-                f"🃏 **{interaction.user.display_name}** jogou **{SPECIALS.get(n,n)} {c}**. "
+                f"🃏 **{interaction.user.display_name}** jogou **{SPECIALS.get(n,str(n))} {CORES_PT.get(c,c)}**. "
                 f"{log_str}Vez de **{prox.display_name if prox else '?'}**.",
                 view=UNOView(self.canal, self.bot))
             await interaction.followup.send("Carta jogada!", ephemeral=True)
@@ -396,13 +398,13 @@ class UNOJogarView(discord.ui.View):
 
 
 class UNOCorView(discord.ui.View):
-    CORES = [("🔵","Azul"),("🟢","Verde"),("🔴","vermelho"),("🟡","Amarelo")]
+    CORES = [("🔵","blue"),("🟢","green"),("🔴","red"),("🟡","yellow")]
 
     def __init__(self, canal, bot):
         super().__init__(timeout=30)
         self.canal = canal; self.bot = bot
         for emoji, c in self.CORES:
-            btn = discord.ui.Button(label=f"{emoji} {c.capitalize()}",
+            btn = discord.ui.Button(label=f"{emoji} {CORES_PT.get(c, c.capitalize())}",
                                     style=discord.ButtonStyle.primary)
             btn.callback = self._make_cb(c)
             self.add_item(btn)
@@ -423,17 +425,17 @@ class UNOCorView(discord.ui.View):
                 g.maos[j.id].extend(drawn)
                 g.cur = (prox + g.dir) % nj
                 await interaction.channel.send(
-                    f"✋ {j.display_name} comprou 4 e pulou! Cor: **{cor}**",
+                    f"✋ {j.display_name} comprou 4 e pulou! Cor: **{CORES_PT.get(cor, cor)}**",
                     view=UNOView(self.canal, self.bot))
             else:
                 g.cur = (g.cur + g.dir) % nj
                 prox  = g.atual()
                 await interaction.channel.send(
-                    f"🎨 Cor: **{cor}**. Vez de **{prox.display_name if prox else '?'}**.",
+                    f"🎨 Cor: **{CORES_PT.get(cor, cor)}**. Vez de **{prox.display_name if prox else '?'}**.",
                     view=UNOView(self.canal, self.bot))
             await _render_update(g)
             await _agendar_timeout(g)
-            await interaction.followup.send(f"Cor **{cor}** escolhida!", ephemeral=True)
+            await interaction.followup.send(f"Cor **{CORES_PT.get(cor, cor)}** escolhida!", ephemeral=True)
             self.stop()
         return cb
 
