@@ -396,7 +396,7 @@ class UNOJogarView(discord.ui.View):
 
 
 class UNOCorView(discord.ui.View):
-    CORES = [("🔵","blue"),("🟢","green"),("🔴","red"),("🟡","yellow")]
+    CORES = [("🔵","Azul"),("🟢","Verde"),("🔴","vermelho"),("🟡","Amarelo")]
 
     def __init__(self, canal, bot):
         super().__init__(timeout=30)
