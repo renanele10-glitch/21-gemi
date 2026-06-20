@@ -109,10 +109,10 @@ def _card(draw, img, x, y, rank, suit, face_down=False, cw=140, ch=196):
 TABLE_BJ = Path(__file__).parent.parent / "assets" / "bj_table.jpg"
 
 # Posições dos slots na mesa (cx, cy, angulo) — mapeadas da imagem
-_BJ_SLOTS  = [(200,430,-14),(620,455,0),(1170,418,14)]
-_BJ_DEALER = (700, 185)
-_BJ_SLOT_CW = [78, 65, 78]
-_BJ_SLOT_CH = [112, 94, 112]
+_BJ_SLOTS  = [(201,490,-14),(687,490,0),(1128,480,14)]
+_BJ_DEALER = (687, 207)
+_BJ_SLOT_CW = [105, 95, 105]
+_BJ_SLOT_CH = [148, 136, 148]
 _BJ_W, _BJ_H = 1400, 840
 
 
