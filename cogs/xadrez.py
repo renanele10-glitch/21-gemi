@@ -219,6 +219,13 @@ class XZVezView(discord.ui.View):
         super().__init__(timeout=MESA_TIMEOUT)
         self.canal = canal; self.bot = bot
 
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        import traceback; traceback.print_exc()
+        try:
+            await interaction.response.send_message(
+                f"Erro interno: `{error}`", ephemeral=True)
+        except: pass
+
     @discord.ui.button(label="♟️ Jogar", style=discord.ButtonStyle.success, custom_id="xz_jogar")
     async def jogar(self, interaction: discord.Interaction, btn):
         g = mesas.get(self.canal)
@@ -269,9 +276,14 @@ class XZSelecionarView(discord.ui.View):
     def __init__(self, canal, bot, opcoes, vez_w):
         super().__init__(timeout=120)
         self.canal=canal; self.bot=bot; self.vez_w=vez_w
-        sel = discord.ui.Select(placeholder="Escolha a peça...", options=opcoes, custom_id="xz_peca")
+        sel = discord.ui.Select(placeholder="Escolha a peça...", options=opcoes)
         sel.callback = self._on_peca
         self.add_item(sel)
+
+    async def on_error(self, interaction, error, item):
+        import traceback; traceback.print_exc()
+        try: await interaction.response.send_message(f"Erro: `{error}`", ephemeral=True)
+        except: pass
 
     async def _on_peca(self, interaction: discord.Interaction):
         g = mesas.get(self.canal)
@@ -307,9 +319,14 @@ class XZMoverView(discord.ui.View):
         super().__init__(timeout=120)
         self.canal=canal; self.bot=bot; self.vez_w=vez_w
 
-        sel = discord.ui.Select(placeholder="Mover para...", options=dest_opts, custom_id="xz_dest")
+        sel = discord.ui.Select(placeholder="Mover para...", options=dest_opts)
         sel.callback = self._on_dest
         self.add_item(sel)
+
+    async def on_error(self, interaction, error, item):
+        import traceback; traceback.print_exc()
+        try: await interaction.response.send_message(f"Erro: `{error}`", ephemeral=True)
+        except: pass
 
         back = discord.ui.Button(label="← Voltar", style=discord.ButtonStyle.grey)
         back.callback = self._on_voltar
@@ -506,3 +523,5 @@ class Xadrez(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Xadrez(bot))
+    # Registra view persistente (botões funcionam mesmo após restart)
+    bot.add_view(XZVezView(canal=0, bot=bot))
