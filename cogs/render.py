@@ -106,84 +106,131 @@ def _card(draw, img, x, y, rank, suit, face_down=False, cw=140, ch=196):
 # BLACKJACK
 # ══════════════════════════════════════════════════════════════════════════════
 
-def render_blackjack(dealer_cards, dealer_val, player_cards, player_val,
-                     reveal_dealer=False, result="", mobile=True):
-    W, H = (MOB_W, MOB_H) if mobile else (DSK_W, DSK_H)
-    img, draw = _base(W, H)
+TABLE_BJ = Path(__file__).parent.parent / "assets" / "bj_table.jpg"
 
-    _label(draw, "✦  BLACKJACK 21  ✦", W//2, 42, GOLDL, 28)
-    _divider(draw, W, 66)
+# Posições dos slots na mesa (cx, cy, angulo) — mapeadas da imagem
+_BJ_SLOTS  = [(200,430,-14),(620,455,0),(1170,418,14)]
+_BJ_DEALER = (700, 185)
+_BJ_SLOT_CW = [78, 65, 78]
+_BJ_SLOT_CH = [112, 94, 112]
+_BJ_W, _BJ_H = 1400, 840
 
-    CW, CH, GAP = (130, 185, 14) if mobile else (150, 210, 18)
-    max_w = W - 80
+
+def _make_bj_card(rank, suit, face_down=False, cw=78, ch=112):
+    import math
+    img  = Image.new("RGBA", (cw, ch), (0,0,0,0))
+    d    = ImageDraw.Draw(img)
+    if face_down:
+        d.rounded_rectangle([0,0,cw-1,ch-1], radius=7,
+                             fill=(20,8,35), outline=(180,150,60), width=2)
+        cx2,cy2,dv = cw//2,ch//2,16
+        d.polygon([(cx2,cy2-dv),(cx2+dv,cy2),(cx2,cy2+dv),(cx2-dv,cy2)], fill=(130,10,10))
+        d.polygon([(cx2,cy2-7),(cx2+7,cy2),(cx2,cy2+7),(cx2-7,cy2)],     fill=(180,140,50))
+    else:
+        is_red = suit in ("♥","♦")
+        fc = (172,10,10) if is_red else (12,10,20)
+        d.rounded_rectangle([2,3,cw+1,ch+2], radius=7, fill=(0,0,0,60))
+        d.rounded_rectangle([0,0,cw-1,ch-1], radius=7,
+                             fill=(252,246,232), outline=(160,140,100), width=1)
+        fr = _font(int(cw*0.19))
+        d.text((5,4),        rank, font=fr, fill=fc)
+        d.text((cw-5,ch-4),  rank, font=fr, fill=fc, anchor="rb")
+        fs = _font(int(cw*0.40))
+        d.text((cw//2,ch//2), suit, font=fs, fill=fc, anchor="mm")
+    return img
+
+
+def _bj_paste(base, card, cx, cy, angle=0):
+    if angle != 0:
+        card = card.rotate(angle, expand=True, resample=Image.BICUBIC)
+    base.paste(card, (cx - card.width//2, cy - card.height//2), card)
+
+
+def _bj_draw_hand(base, cards, cx, cy, angle=0, face_downs=None, cw=78, ch=112):
+    import math
+    n = len(cards)
+    if n == 0: return
+    face_downs = face_downs or [False]*n
+    ov = int(cw*0.25)
+    ca = [angle+(i-(n-1)/2)*3 for i in range(n)]
+    tw = cw+(n-1)*(cw-ov)
+    offs = [-(tw//2)+cw//2+i*(cw-ov) for i in range(n)]
+    rad = math.radians(angle)
+    for i,(r,s) in enumerate(cards):
+        dx = offs[i]
+        card = _make_bj_card(r, s, face_down=face_downs[i], cw=cw, ch=ch)
+        _bj_paste(base, card,
+                  int(cx+dx*math.cos(rad)), int(cy+dx*math.sin(rad)),
+                  angle=ca[i])
+
+
+def _bj_badge(draw, text, cx, cy, fill=(10,10,10,190), size=13):
+    f  = _font(size)
+    bb = draw.textbbox((0,0), text, font=f)
+    bw = min(bb[2]-bb[0]+14, 160); bh = 22
+    bx,by = cx-bw//2, cy-bh//2
+    draw.rounded_rectangle([bx,by,bx+bw,by+bh], radius=5,
+                            fill=fill, outline=GOLD, width=1)
+    draw.text((cx,cy), text[:20], font=f, fill=GOLDL, anchor="mm")
+
+
+def _bj_name(draw, text, cx, cy, active=False):
+    f   = _font(13)
+    col = (255,215,0) if active else (200,185,150)
+    draw.text((cx+1,cy+1), text, font=f, fill=(0,0,0,200), anchor="mm")
+    draw.text((cx,cy),     text, font=f, fill=col,          anchor="mm")
+
+
+def render_blackjack(slots, dealer_cards, dealer_val, reveal_dealer=False, result_map=None):
+    """
+    slots: lista de dicts [{name, cards, val, active, result}]  max 3
+    dealer_cards: list of (rank, suit)
+    dealer_val: int
+    reveal_dealer: bool
+    """
+    W, H = _BJ_W, _BJ_H
+    if TABLE_BJ.exists():
+        table = Image.open(TABLE_BJ).convert("RGB").resize((W,H), Image.LANCZOS)
+        base  = table.convert("RGBA")
+    else:
+        base = Image.new("RGBA", (W,H), (8,48,8))
+    draw = ImageDraw.Draw(base, "RGBA")
 
     # Dealer
-    dv_str = str(dealer_val) if reveal_dealer else "?"
-    _label(draw, f"DEALER  [ {dv_str} ]", W//2, 86, GOLD, 19)
+    dcx, dcy = _BJ_DEALER
+    fd_d = [i==0 and not reveal_dealer for i in range(len(dealer_cards))]
+    _bj_draw_hand(base, dealer_cards, dcx, dcy, face_downs=fd_d)
+    dv = str(dealer_val) if reveal_dealer else "?"
+    _bj_badge(draw, f"{dv} pts", dcx, dcy-62)
 
-    nd_vis = min(len(dealer_cards), 5 if mobile else 7)
-    tw_d = nd_vis*CW + (nd_vis-1)*GAP
-    if tw_d > max_w:
-        sc = max_w/tw_d; cw_d=int(CW*sc); ch_d=int(CH*sc); gap_d=int(GAP*sc)
-        tw_d = nd_vis*cw_d+(nd_vis-1)*gap_d
-    else: cw_d,ch_d,gap_d = CW,CH,GAP
-    sx_d = W//2 - tw_d//2; dy = 108
-    for i in range(nd_vis):
-        r2, s2 = dealer_cards[i]
-        _card(draw, img, sx_d+i*(cw_d+gap_d), dy, r2, s2,
-              face_down=(i==0 and not reveal_dealer), cw=cw_d, ch=ch_d)
+    # Jogadores
+    for i, slot in enumerate(slots[:3]):
+        cx, cy, angle = _BJ_SLOTS[i]
+        cw, ch = _BJ_SLOT_CW[i], _BJ_SLOT_CH[i]
+        cards  = slot.get("cards", [])
+        val    = slot.get("val", 0)
+        name   = slot.get("name", f"P{i+1}")
+        active = slot.get("active", False)
+        result = slot.get("result", "")
+        if not cards: continue
+        _bj_draw_hand(base, cards, cx, cy, angle=angle, cw=cw, ch=ch)
+        pts_y  = cy - ch//2 - 18
+        name_y = cy + ch//2 + 18
+        fill = (20,90,20,210) if active else (10,10,10,190)
+        _bj_badge(draw, f"{val} pts", cx, pts_y, fill=fill)
+        if result:
+            win  = any(w in result for w in ["venceu","BLACKJACK","estourou"])
+            lose = any(w in result for w in ["perdeu","Bust","Dealer"])
+            rc   = (20,120,20,230) if win else (140,20,20,230) if lose else (100,90,10,230)
+            _bj_badge(draw, result[:18], cx, pts_y-26, fill=rc)
+        _bj_name(draw, name[:14], cx, name_y, active=active)
 
-    sep_y = dy + ch_d + 26
-    _divider(draw, W, sep_y)
-    _label(draw, f"VOCÊ  [ {player_val} ]", W//2, sep_y+24, CREAM, 19)
-
-    np2 = len(player_cards)
-    tw_j = np2*CW+(np2-1)*GAP
-    if tw_j > max_w:
-        sc = max_w/tw_j; cw_j=int(CW*sc); ch_j=int(CH*sc); gap_j=int(GAP*sc)
-        tw_j = np2*cw_j+(np2-1)*gap_j
-    else: cw_j,ch_j,gap_j = CW,CH,GAP
-    sx_j = W//2 - tw_j//2; py = sep_y + 46
-    for i,(r2,s2) in enumerate(player_cards):
-        _card(draw, img, sx_j+i*(cw_j+gap_j), py, r2, s2, cw=cw_j, ch=ch_j)
-
-    if result:
-        rw, rh = min(560, W-80), 64
-        ry = py+ch_j+22; rx = W//2-rw//2
-        draw.rounded_rectangle([rx,ry,rx+rw,ry+rh], radius=10,
-                                fill=(6,3,14,235), outline=(*GOLD,180), width=2)
-        _label(draw, result, W//2, ry+rh//2, GOLDL, 22)
-
-    return _bytes(img)
+    return _bytes(base.convert("RGB"))
 
 
-def bj_posicoes(dealer_cards, player_cards, mobile=True):
-    W = MOB_W if mobile else DSK_W
-    CW, CH, GAP = (130, 185, 14) if mobile else (150, 210, 18)
-    max_w = W - 80
-    nd = min(len(dealer_cards), 5 if mobile else 7)
-    tw_d = nd*CW+(nd-1)*GAP
-    if tw_d > max_w:
-        sc=max_w/tw_d; cw_d=int(CW*sc); ch_d=int(CH*sc); gap_d=int(GAP*sc)
-        tw_d = nd*cw_d+(nd-1)*gap_d
-    else: cw_d,ch_d,gap_d = CW,CH,GAP
-    sx_d = W//2-tw_d//2
-    pos_d = [(sx_d+i*(cw_d+gap_d), 108, cw_d, ch_d) for i in range(nd)]
-    np2 = len(player_cards)
-    tw_j = np2*CW+(np2-1)*GAP
-    if tw_j > max_w:
-        sc=max_w/tw_j; cw_j=int(CW*sc); ch_j=int(CH*sc); gap_j=int(GAP*sc)
-        tw_j = np2*cw_j+(np2-1)*gap_j
-    else: cw_j,ch_j,gap_j = CW,CH,GAP
-    sep_y = 108+ch_d+26
-    sx_j = W//2-tw_j//2
-    pos_j = [(sx_j+i*(cw_j+gap_j), sep_y+46, cw_j, ch_j) for i in range(np2)]
-    return pos_d, pos_j, ch_d
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# POKER
-# ══════════════════════════════════════════════════════════════════════════════
+def bj_posicoes(slots_count=1):
+    """Retorna posições (cx,cy,angle) dos slots ativos — para compatibilidade com animator."""
+    return [_BJ_SLOTS[i] for i in range(min(slots_count, 3))]
 
 def render_poker(community, players, pot, current_name="", mobile=True):
     W, H = (MOB_W, MOB_H) if mobile else (DSK_W, DSK_H)
