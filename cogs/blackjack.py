@@ -12,9 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 from dataclasses import dataclass, field
 from .fichas import get_saldo, add_saldo, registrar_resultado
-from .render import render_blackjack
-from .animator import gif_carta_nova, gif_flip_dealer, gif_resultado, gif_distribuicao
-from .render import bj_posicoes
+from .render import render_blackjack as _render_bj_raw
 
 SUITS = ["♠","♥","♦","♣"]
 RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]
@@ -22,6 +20,9 @@ VALS  = {"A":11,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,
          "8":8,"9":9,"10":10,"J":10,"Q":10,"K":10}
 APOSTA_MIN = 10
 APOSTA_MAX = 2000
+MAX_PLAYERS = 3
+# mesas ativas: canal_id → lista de BJGame
+_mesas: dict[int, list] = {}
 
 
 def _baralho():
@@ -165,67 +166,33 @@ class BJView(discord.ui.View):
                 c.disabled = not g.fim
 
     def _render(self, animated=False, anim_type=None, new_card=None, reveal_pos=None):
-        from PIL import Image
         g = self.game
         pv = _calcular(g.mao)
         dv = _calcular(g.dealer)
-
-        base_buf = render_blackjack(g.dealer, dv, g.mao, pv,
-                                    reveal_dealer=g.fim, result="", mobile=True)
-        base_img = Image.open(base_buf).convert("RGB")
-
-        if not animated or anim_type is None:
-            buf = render_blackjack(g.dealer, dv, g.mao, pv,
-                                   reveal_dealer=g.fim, result=g.result, mobile=True)
-            return discord.File(buf, "blackjack.png")
-
-        elif anim_type == "hit" and new_card:
-            rank, suit = new_card
-            pos_d, pos_j, _ = bj_posicoes(g.dealer, g.mao)
-            if pos_j:
-                px, py, cw2, ch2 = pos_j[-1]
-                buf = gif_carta_nova(base_img, px, py, rank, suit, cw2, ch2)
-                return discord.File(buf, "blackjack.gif")
-
-        elif anim_type == "flip" and reveal_pos:
-            pos_d, pos_j, _ = bj_posicoes(g.dealer, g.mao)
-            if pos_d:
-                px, py, cw2, ch2 = pos_d[0]
-                rank, suit = g.dealer[0]
-                buf = gif_flip_dealer(base_img, px, py, rank, suit, cw2, ch2)
-                return discord.File(buf, "blackjack.gif")
-
-        elif anim_type == "deal":
-            pos_d, pos_j, _ = bj_posicoes(g.dealer, g.mao)
-            buf = gif_distribuicao(base_img, g.mao, g.dealer, pos_j, pos_d)
-            return discord.File(buf, "blackjack.gif")
-
-        elif anim_type == "result":
-            res_col = (80,220,80) if "venceu" in g.result or "BLACKJACK" in g.result else (220,80,80)
-            if "Empate" in g.result or "empate" in g.result:
-                res_col = (200,200,80)
-            buf = gif_resultado(base_img, g.result, cor=res_col)
-            return discord.File(buf, "blackjack.gif")
-
-        # fallback
-        buf = render_blackjack(g.dealer, dv, g.mao, pv, reveal_dealer=g.fim, result=g.result, mobile=True)
+        slot = {
+            "name":   g.user.display_name,
+            "cards":  g.mao,
+            "val":    pv,
+            "active": True,
+            "result": g.result if g.fim else "",
+        }
+        buf = _render_bj_raw([slot], g.dealer, dv, reveal_dealer=g.fim)
         return discord.File(buf, "blackjack.png")
 
-    def _embed(self, gif=False):
+    def _embed(self):
         g = self.game
-        ext = "gif" if gif else "png"
         mao2_str = ""
         if g.split_ativo:
             v2 = _calcular(g.mao2)
             mao2_str = f"\n🂠 Mão 2: **{v2}** pts"
-        embed = discord.Embed(title="🃏 Blackjack 21", color=0x1a0005)
+        embed = discord.Embed(color=0x0a1a08)
         embed.description = (
             f"**{g.user.display_name}** — "
             f"✅ {g.wins}  ❌ {g.losses}  🤝 {g.ties}\n"
-            f"Aposta atual: **{g.aposta:,} fichas**"
+            f"Aposta: **{g.aposta:,} fichas**"
             + mao2_str
         )
-        embed.set_image(url=f"attachment://blackjack.{ext}")
+        embed.set_image(url="attachment://blackjack.png")
         embed.set_footer(text="Próxima Mão para continuar." if g.fim else "Boa sorte!")
         return embed
 
@@ -272,19 +239,13 @@ class BJView(discord.ui.View):
             embed.set_footer(text="Jogando mão 2 do split…")
             await interaction.response.edit_message(embed=embed, attachments=[f], view=self)
             return
-        # FIX: stand faz flip primeiro, depois result em followup
-        self._sync()
-        f_flip = self._render(animated=True, anim_type="flip", reveal_pos=True)
-        await interaction.response.edit_message(
-            embed=self._embed(gif=True), attachments=[f_flip], view=self
-        )
-        await asyncio.sleep(1.2)
-        # Agora credita e mostra resultado
+        # Credita e renderiza resultado
         await add_saldo(self.bot, self.game.user, self.game.aposta + delta)
         await registrar_resultado(self.bot, self.game.user, delta > 0)
-        f_res = self._render(animated=True, anim_type="result")
-        await interaction.edit_original_response(
-            embed=self._embed(gif=True), attachments=[f_res], view=self
+        self._sync()
+        f = self._render()
+        await interaction.response.edit_message(
+            embed=self._embed(), attachments=[f], view=self
         )
 
     @discord.ui.button(label="Dobrar", emoji="2️⃣",
